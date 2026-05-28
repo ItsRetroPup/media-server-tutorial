@@ -1,4 +1,7 @@
+#EPISODE ONE: Basic Automated Media Server Setup
+
 services:
+# Media Streaming
   plex:
     image: lscr.io/linuxserver/plex:latest
     container_name: plex
@@ -7,9 +10,194 @@ services:
       - PUID=1000
       - PGID=100
       - TZ=Europe/London
-    ports:
-        - 32400:32400
     volumes:
       - /volume1/docker/media-server/plex:/config
       - /volume2/media:/data
     restart: unless-stopped
+
+# Media Downloader
+  sabnzbd:
+    image: lscr.io/linuxserver/sabnzbd:latest
+    container_name: sabnzbd
+    ports:
+      - 8080:8080
+    environment:
+      - PUID=1000
+      - PGID=100
+      - TZ=Europe/London
+    volumes:
+      - /volume1/docker/media-server/sabnzbd:/config
+      - /volume1/downloads:/downloads
+    restart: unless-stopped
+
+# Media Organiser
+  radarr:
+    image: lscr.io/linuxserver/radarr:latest
+    container_name: radarr
+    ports:
+      - 7878:7878
+    environment:
+      - PUID=1000
+      - PGID=10
+      - TZ=Europe/London
+    volumes:
+      - /volume1/docker/media-server/radarr:/config
+      - /volume2/media/movies:/movies
+      - /volume1/downloads:/downloads
+    restart: unless-stopped
+
+  sonarr:
+    image: lscr.io/linuxserver/sonarr:latest
+    container_name: sonarr
+    ports:
+      - 8989:8989
+    environment:
+      - PUID=1000
+      - PGID=10
+      - TZ=Europe/London
+    volumes:
+      - /volume1/docker/media-server/sonarr:/config
+      - /volume2/media/tv:/tv
+      - /volume1/downloads:/downloads
+    restart: unless-stopped
+
+
+#EPISODE TWO: Subtitles
+# Subtitles
+  opensubtitles-scraper:
+    build:
+      context: ./opensubtitles-scraper
+      dockerfile: Dockerfile
+    image: ghcr.io/lavx/opensubtitles-scraper:latest
+    container_name: opensubtitles-scraper
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - DEBUG=${SCRAPER_DEBUG:-false}
+      - FLARESOLVERR_URL=http://flaresolverr:8191/v1
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    networks:
+      - bazarr-network
+
+  flaresolverr:
+    image: ghcr.io/flaresolverr/flaresolverr:latest
+    container_name: flaresolverr
+    restart: unless-stopped
+    environment:
+      - LOG_LEVEL=info
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://192.168.1.58:8191/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  bazarr:
+    image: ghcr.io/lavx/bazarr:latest
+    container_name: bazarr
+    restart: unless-stopped
+    depends_on:
+      opensubtitles-scraper:
+        condition: service_healthy
+    
+    ports:
+      - "6767:6767"
+    
+    environment:
+      - PUID=1000
+      - PGID=100
+      - TZ=Europe/London
+      - OPENSUBTITLES_USE_WEB_SCRAPER=true
+      - OPENSUBTITLES_SCRAPER_URL=http://opensubtitles-scraper:8000
+    
+    volumes:
+      - /volume1/docker/media-server/bazarr:/config
+      - /volume2/media/movies:/movies
+      - /volume2/media/tv:/tv
+    
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:6767/_supervisor/status | grep -q '\"running\"'"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    
+    networks:
+      - bazarr-network
+
+  subgen:
+      container_name: subgen
+      tty: true
+      image: mccloud/subgen
+      environment:
+         - "WHISPER_MODEL=medium"
+         - "WHISPER_THREADS=4"
+         - "PROCADDEDMEDIA=True"
+         - "PROCMEDIAONPLAY=False"
+         - "NAMESUBLANG=ai"
+         - "SKIPIFINTERNALSUBLANG=eng"
+         - "WEBHOOKPORT=9000"
+         - "CONCURRENT_TRANSCRIPTIONS=2"
+         - "WORD_LEVEL_HIGHLIGHT=False"
+         - "DEBUG=True"
+         - "USE_PATH_MAPPING=False"
+         - "TRANSCRIBE_DEVICE=cpu"
+         - "CLEAR_VRAM_ON_COMPLETE=True"
+         - "MODEL_PATH=./models"
+         - "UPDATE=False"
+         - "APPEND=False"
+         - "USE_MODEL_PROMPT=False"
+         - "CUSTOM_MODEL_PROMPT="
+         - "LRC_FOR_AUDIO_FILES=True"
+         - "CUSTOM_REGROUP=cm_sl=84_sl=42++++++1"
+      volumes:
+         - "/volume2/media/tv:/tv"
+         - "/volume2/media/movies:/movies"
+         - "/volume1/docker/media-server/bazarr/subgen/models:/subgen/models"
+      ports:
+         - "9000:9000"
+
+#EPISODE THREE: Quality and Profiles
+  profilarr:
+      image: ghcr.io/dictionarry-hub/profilarr:latest
+      container_name: profilarr
+      ports:
+      - '6868:6868'
+      volumes:
+      - /volume1/docker/media-server/profilarr:/config
+      environment:
+      - PUID=1000
+      - PGID=100
+      - TZ=Europe/London
+
+
+#EPISODE FOUR: Requests
+  seerr:
+    image: ghcr.io/seerr-team/seerr:latest
+    init: true
+    container_name: seerr
+    environment:
+      - LOG_LEVEL=debug
+      - TZ=Europe/London
+      - PORT=5055 #optional
+    ports:
+      - 5055:5055
+    volumes:
+      - /volume1/docker/media-server/seerr:/app/config
+    healthcheck:
+      test: wget --no-verbose --tries=1 --spider http://localhost:5055/api/v1/settings/public || exit 1
+      start_period: 20s
+      timeout: 3s
+      interval: 15s
+      retries: 3
+    restart: unless-stopped
+
+networks:
+  bazarr-network:
+    driver: bridge
