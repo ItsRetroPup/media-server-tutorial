@@ -1,0 +1,15 @@
+services:
+  plex:
+    image: lscr.io/linuxserver/plex:latest
+    container_name: plex
+    network_mode: host
+    environment:
+      - PUID=1000
+      - PGID=100
+      - TZ=Europe/London
+    ports:
+        - 32400:32400
+    volumes:
+      - /volume1/docker/media-server/plex:/config
+      - /volume2/media:/data
+    restart: unless-stopped
