@@ -1,0 +1,62 @@
+#EPISODE ONE: Basic Automated Media Server Setup
+
+services:
+# Media Streaming
+  plex:
+    image: lscr.io/linuxserver/plex:latest
+    container_name: plex
+    network_mode: host
+    environment:
+      - PUID=1000
+      - PGID=100
+      - TZ=Europe/London
+    volumes:
+      - /volume1/docker/media-server/plex:/config
+      - /volume2/media:/data
+    restart: unless-stopped
+
+# Media Downloader
+  sabnzbd:
+    image: lscr.io/linuxserver/sabnzbd:latest
+    container_name: sabnzbd
+    ports:
+      - 8080:8080
+    environment:
+      - PUID=1000
+      - PGID=100
+      - TZ=Europe/London
+    volumes:
+      - /volume1/docker/media-server/sabnzbd:/config
+      - /volume1/downloads:/downloads
+    restart: unless-stopped
+
+# Media Organiser
+  radarr:
+    image: lscr.io/linuxserver/radarr:latest
+    container_name: radarr
+    ports:
+      - 7878:7878
+    environment:
+      - PUID=1000
+      - PGID=10
+      - TZ=Europe/London
+    volumes:
+      - /volume1/docker/media-server/radarr:/config
+      - /volume2/media/movies:/movies
+      - /volume1/downloads:/downloads
+    restart: unless-stopped
+
+  sonarr:
+    image: lscr.io/linuxserver/sonarr:latest
+    container_name: sonarr
+    ports:
+      - 8989:8989
+    environment:
+      - PUID=1000
+      - PGID=10
+      - TZ=Europe/London
+    volumes:
+      - /volume1/docker/media-server/sonarr:/config
+      - /volume2/media/tv:/tv
+      - /volume1/downloads:/downloads
+    restart: unless-stopped

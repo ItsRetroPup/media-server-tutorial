@@ -1,0 +1,13 @@
+#EPISODE FOUR: Quality and Profiles
+services:
+  profilarr:
+      image: ghcr.io/dictionarry-hub/profilarr:latest
+      container_name: profilarr
+      ports:
+      - '6868:6868'
+      volumes:
+      - /volume1/docker/media-server/profilarr:/config
+      environment:
+      - PUID=1000
+      - PGID=100
+      - TZ=Europe/London
